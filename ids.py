@@ -1,5 +1,6 @@
 import socket
 import struct
+import subprocess
 
 # Cria um socket raw
 s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
@@ -8,7 +9,7 @@ s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
 s.bind(('lo', 0))
 
 syn_count = {}
-ipsBloqueados = {}
+ipsBloqueados = set()
 
 # Recebe pacotes em um loop
 while True:
@@ -55,5 +56,8 @@ while True:
                 print(f"Número de pacotes SYN de {s_addr}: {syn_count[s_addr]}")
 
                 if syn_count[s_addr] > 5:
-                    ipsBloqueados[s_addr] = True
-                    print("IP bloqueado: {}".format(s_addr))
+                    print('Ataque SYN detectado')
+                    if s_addr not in ipsBloqueados:
+                        ipsBloqueados.add(s_addr)
+                        subprocess.run(["sudo", "iptables", "-A", "INPUT", "-s", s_addr, "-j", "DROP"])
+                        print("IP bloqueado pelo iptables: {}".format(s_addr))
