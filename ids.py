@@ -1,15 +1,25 @@
 import socket
 import struct
 import subprocess
+import time
 
 # Cria um socket raw
 s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
 
 # Define a interface de rede para escutar
-s.bind(('lo', 0))
+s.bind(('enp0s3', 0))
 
 syn_count = {}
 ipsBloqueados = set()
+syn_timestamps = {}
+
+def listar_ips_bloqueados():
+    result = subprocess.run(["sudo", "iptables", "-L", "-n", "-v"], capture_output=True, text=True)
+    print(result.stdout)
+
+def limpar_iptables():
+    subprocess.run(["sudo", "iptables", "-F"])
+    print("Todas as regras do iptables foram limpas.")
 
 # Recebe pacotes em um loop
 while True:
@@ -44,20 +54,33 @@ while True:
 
             # Verifica se o bit SYN está definido (0x02)
             if flags & 0x02:
-                #print("Pacote SYN detectado")
                 
                 s_addr = socket.inet_ntoa(iph[8])
+                current_time = time.time()
                 
-                if s_addr in syn_count:
-                    syn_count[s_addr] += 1
+                if s_addr in syn_timestamps:
+                    syn_timestamps[s_addr].append(current_time)
                 else:
-                    syn_count[s_addr] = 1
+                    syn_timestamps[s_addr] = [current_time]
 
-                print(f"Número de pacotes SYN de {s_addr}: {syn_count[s_addr]}")
+                if s_addr in ipsBloqueados:
+                    continue
 
-                if syn_count[s_addr] > 5:
+                # Remove timestamps mais antigos que 1 segundo
+                syn_timestamps[s_addr] = [timestamp for timestamp in syn_timestamps[s_addr] if current_time - timestamp <= 1]
+
+                print(f"Número de pacotes SYN de {s_addr} no último segundo: {len(syn_timestamps[s_addr])}")
+
+                if len(syn_timestamps[s_addr]) > 3:
                     print('Ataque SYN detectado')
                     if s_addr not in ipsBloqueados:
                         ipsBloqueados.add(s_addr)
                         subprocess.run(["sudo", "iptables", "-A", "INPUT", "-s", s_addr, "-j", "DROP"])
+                        subprocess.run(["sudo", "iptables", "-A", "INPUT", "-p", "icmp", "-s", s_addr, "-j", "DROP"])
+                        subprocess.run(["sudo", "iptables", "-A", "INPUT", "-p", "tcp", "-s", s_addr, "-j", "DROP"])
+                        subprocess.run(["sudo", "iptables", "-A", "OUTPUT", "-s", s_addr, "-j", "DROP"])
+                        subprocess.run(["sudo", "iptables", "-A", "OUTPUT", "-p", "icmp", "-s", s_addr, "-j", "DROP"])
+                        subprocess.run(["sudo", "iptables", "-A", "OUTPUT", "-p", "tcp", "-s", s_addr, "-j", "DROP"])
+
+
                         print("IP bloqueado pelo iptables: {}".format(s_addr))
