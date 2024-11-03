@@ -17,6 +17,10 @@ def listar_ips_bloqueados():
     result = subprocess.run(["sudo", "iptables", "-L", "-n", "-v"], capture_output=True, text=True)
     print(result.stdout)
 
+def log_ip_bloqueado(ip):
+    with open("ips_bloqueados.log", "a") as log_file:
+        log_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - IP bloqueado: {ip}\n")
+
 def limpar_iptables():
     subprocess.run(["sudo", "iptables", "-F"])
     print("Todas as regras do iptables foram limpas.")
@@ -82,5 +86,5 @@ while True:
                         subprocess.run(["sudo", "iptables", "-A", "OUTPUT", "-p", "icmp", "-s", s_addr, "-j", "DROP"])
                         subprocess.run(["sudo", "iptables", "-A", "OUTPUT", "-p", "tcp", "-s", s_addr, "-j", "DROP"])
 
-
+                        log_ip_bloqueado(s_addr)
                         print("IP bloqueado pelo iptables: {}".format(s_addr))
